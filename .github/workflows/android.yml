@@ -27,37 +27,38 @@ jobs:
       - name: Configurar Java
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: '17'
 
-      - name: Configurar Android SDK
+      - name: Configurar Android SDK manualmente
         shell: bash
         run: |
           set -e
 
-          mkdir -p "$ANDROID_HOME/cmdline-tools"
+          SDK="$ANDROID_HOME"
+          TOOLS="$SDK/cmdline-tools/latest"
 
-          if [ ! -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+          mkdir -p "$SDK/cmdline-tools"
+
+          if [ ! -x "$TOOLS/bin/sdkmanager" ]; then
             mkdir -p /tmp/android-tools
             cd /tmp/android-tools
 
             curl -fL \
-              https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip \
+              "https://dl.google.com/android/repository/commandlinetools-linux-12266719_latest.zip" \
               -o tools.zip
 
             unzip -q tools.zip
-
-            mkdir -p "$ANDROID_HOME/cmdline-tools/latest"
-            cp -R cmdline-tools/. "$ANDROID_HOME/cmdline-tools/latest/"
+            mkdir -p "$TOOLS"
+            cp -R cmdline-tools/. "$TOOLS/"
           fi
 
-          echo "$ANDROID_HOME/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$ANDROID_HOME/platform-tools" >> "$GITHUB_PATH"
+          echo "$TOOLS/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools" >> "$GITHUB_PATH"
 
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          yes | "$TOOLS/bin/sdkmanager" --licenses || true
 
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --install \
+          "$TOOLS/bin/sdkmanager" --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -67,62 +68,58 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Localizar e compilar aplicativo
+      - name: Localizar projeto Android
         shell: bash
         run: |
           set -e
 
-          echo "Procurando projeto Android..."
+          GRADLE_FILE=$(find . -maxdepth 6 -type f \
+            \( -name 'settings.gradle' -o -name 'settings.gradle.kts' \) \
+            -not -path '*/.gradle/*' \
+            -not -path '*/build/*' \
+            -print -quit)
 
-          GRADLE_DIR=""
-
-          while IFS= read -r FILE; do
-            if [ "$(basename "$FILE")" = "settings.gradle" ] || \
-               [ "$(basename "$FILE")" = "settings.gradle.kts" ]; then
-              GRADLE_DIR="$(dirname "$FILE")"
-              break
-            fi
-          done < <(
-            find . -maxdepth 6 -type f \
-              \( -name settings.gradle -o -name settings.gradle.kts \) \
-              -not -path '*/.gradle/*' \
-              -not -path '*/build/*'
-          )
-
-          if [ -z "$GRADLE_DIR" ]; then
-            echo "ERRO: projeto Gradle nao encontrado."
-            echo "Arquivos encontrados no repositorio:"
+          if [ -z "$GRADLE_FILE" ]; then
+            echo "ERRO: settings.gradle nao encontrado."
+            echo "Arquivos encontrados:"
             find . -maxdepth 4 -type f | head -200
             exit 1
           fi
 
-          echo "Pasta do projeto: $GRADLE_DIR"
-          cd "$GRADLE_DIR"
+          PROJECT_DIR=$(dirname "$GRADLE_FILE")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Projeto encontrado: $PROJECT_DIR"
+
+      - name: Compilar aplicativo
+        shell: bash
+        run: |
+          set -e
+
+          cd "$PROJECT_DIR"
 
           if [ ! -f "app/build.gradle" ] && \
              [ ! -f "app/build.gradle.kts" ]; then
             echo "ERRO: modulo app nao encontrado."
-            echo "Verifique se existe a pasta app com build.gradle ou build.gradle.kts."
             exit 1
           fi
 
           gradle --no-daemon :app:assembleDebug
 
-          APK_PATH="app/build/outputs/apk/debug/app-debug.apk"
+          APK="$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk"
 
-          if [ ! -f "$APK_PATH" ]; then
+          if [ ! -f "$APK" ]; then
             echo "ERRO: APK nao foi gerado."
-            find . -type f -name "*.apk"
             exit 1
           fi
 
           mkdir -p "$GITHUB_WORKSPACE/output"
-          cp "$APK_PATH" "$GITHUB_WORKSPACE/output/RHZIN-Otimizador.apk"
+          cp "$APK" "$GITHUB_WORKSPACE/output/RHZIN-Otimizador.apk"
 
       - name: Disponibilizar APK
         uses: actions/upload-artifact@v4
         with:
-          name: RHZIN-Otimizador-apk
-          path: output/RHZIN-Otimizador.apk
+          name: 'RHZIN-Otimizador-apk'
+          path: 'output/RHZIN-Otimizador.apk'
           if-no-files-found: error
           retention-days: 30
