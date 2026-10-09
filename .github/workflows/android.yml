@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 env:
-  JAVA_VERSION: '17'
-  GRADLE_VERSION: '8.9'
+  JAVA_VERSION: "17"
+  GRADLE_VERSION: "8.9"
   APK_PATH: app/build/outputs/apk/debug/app-debug.apk
 
 jobs:
@@ -28,8 +28,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
-          cache: gradle
+          java-version: "17"
 
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
@@ -37,35 +36,66 @@ jobs:
       - name: Instalar componentes do Android SDK
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: ${{ env.GRADLE_VERSION }}
+          gradle-version: "8.9"
 
-      - name: Verificar ambiente e estrutura do projeto
+      - name: Localizar diretório do projeto Android
+        run: |
+          PROJECT_DIR="$(find . -type f -name 'settings.gradle.kts' -print -quit | xargs -r dirname)"
+
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "Erro: settings.gradle.kts não foi encontrado."
+            echo "Envie os arquivos extraídos do projeto para o GitHub."
+            echo "Não envie somente o arquivo ZIP."
+            find . -maxdepth 3 -type f | sort | head -100
+            exit 1
+          fi
+
+          echo "Projeto encontrado em: $PROJECT_DIR"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+
+      - name: Verificar ambiente e arquivos do projeto
         run: |
           java -version
           gradle --version
+
+          cd "$PROJECT_DIR"
+
           test -f settings.gradle.kts
           test -f build.gradle.kts
           test -f app/build.gradle.kts
           test -f app/src/main/AndroidManifest.xml
           test -f app/src/main/java/com/rhzin/otimizador/MainActivity.kt
 
-      - name: Executar lint do APK debug
-        run: gradle --no-daemon --stacktrace :app:lintDebug
+      - name: Executar lint do Android
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon --stacktrace :app:lintDebug
 
-      - name: Compilar APK debug
-        run: gradle --no-daemon --stacktrace :app:assembleDebug
+      - name: Gerar APK debug
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon --stacktrace :app:assembleDebug
 
       - name: Validar e preparar APK
         run: |
-          test -s "${APK_PATH}"
+          test -s "$PROJECT_DIR/$APK_PATH"
+
           mkdir -p output
-          cp "${APK_PATH}" output/RHZIN-Otimizador-debug.apk
-          sha256sum output/RHZIN-Otimizador-debug.apk | tee output/RHZIN-Otimizador-debug.apk.sha256
+
+          cp "$PROJECT_DIR/$APK_PATH" \
+            output/RHZIN-Otimizador-debug.apk
+
+          sha256sum output/RHZIN-Otimizador-debug.apk \
+            | tee output/RHZIN-Otimizador-debug.apk.sha256
+
           ls -lh output/RHZIN-Otimizador-debug.apk
 
       - name: Publicar APK para download
