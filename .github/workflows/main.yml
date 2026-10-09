@@ -2,7 +2,9 @@ name: Gerar APK RHZIN Otimizador
 
 on:
   push:
-    branches: [main, master]
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -26,11 +28,15 @@ jobs:
       - name: Configurar Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Instalar SDK e ferramentas
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Aceitar licenças do Android SDK
+        run: |
+          set +o pipefail
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          set -o pipefail
 
-      - name: Aceitar licenças Android
-        run: yes | sdkmanager --licenses
+      - name: Instalar componentes Android
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -45,7 +51,7 @@ jobs:
           mkdir -p output
           cp app/build/outputs/apk/debug/app-debug.apk output/RHZIN-Otimizador.apk
 
-      - name: Publicar APK para download
+      - name: Publicar APK
         uses: actions/upload-artifact@v4
         with:
           name: RHZIN-Otimizador-apk
