@@ -31,13 +31,29 @@ jobs:
           java-version: "17"
 
       - name: Configurar Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: |
-            platform-tools
-            platforms;android-35
-            build-tools;35.0.0
-          accept-android-sdk-licenses: true
+        run: |
+          set -e
+
+          SDKMANAGER="$(command -v sdkmanager || true)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME" "$ANDROID_SDK_ROOT" \
+              -type f -name sdkmanager 2>/dev/null | head -n 1)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "Erro: sdkmanager não foi encontrado."
+            exit 1
+          fi
+
+          echo "Usando sdkmanager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Configurar Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -59,7 +75,7 @@ jobs:
           echo "Projeto encontrado em: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Verificar ambiente e arquivos do projeto
+      - name: Verificar arquivos do projeto
         run: |
           java -version
           gradle --version
@@ -84,12 +100,18 @@ jobs:
 
       - name: Validar e preparar APK
         run: |
-          test -s "$PROJECT_DIR/$APK_PATH"
+          set -e
+
+          APK_FILE="$PROJECT_DIR/$APK_PATH"
+
+          if [ ! -s "$APK_FILE" ]; then
+            echo "Erro: APK não foi gerado em $APK_FILE"
+            exit 1
+          fi
 
           mkdir -p output
 
-          cp "$PROJECT_DIR/$APK_PATH" \
-            output/RHZIN-Otimizador-debug.apk
+          cp "$APK_FILE" output/RHZIN-Otimizador-debug.apk
 
           sha256sum output/RHZIN-Otimizador-debug.apk \
             | tee output/RHZIN-Otimizador-debug.apk.sha256
